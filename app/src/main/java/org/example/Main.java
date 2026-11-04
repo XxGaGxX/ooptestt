@@ -31,12 +31,16 @@ public class Main extends SimpleApplication implements ActionListener {
     private com.jme3.font.BitmapText debugText;
     private VehicleControl vehicle;
     private final float accelerationForce = 1000.0f;
-    private final float brakeForce = 2500.0f;
+    private final float brakeForce = 1500.0f;
     private float steeringValue = 0;
     private boolean left = false, right = false, up = false, down = false;
     private float accelerationValue = 0;
     private final float maxSteerAngle = 0.35f;
     public Spatial carModel;
+    private float currentSteer = 0f;
+    private final float steerSpeed = 2.5f;
+    private final float returnSpeed = 4.0f;
+
     Vector3f horizonOffset = new Vector3f(0.0f, 2f, -4.8f);
     Quaternion horizonPitch = new Quaternion().fromAngleAxis(
             com.jme3.math.FastMath.DEG_TO_RAD * 12f,
@@ -230,16 +234,33 @@ public class Main extends SimpleApplication implements ActionListener {
                     speedKmH, pos.x, pos.y, pos.z, steeringValue));
 
             // Posiziona la cam dietro l'auto
-        Vector3f worldCamPos = carModel.localToWorld(horizonOffset, null);
-        cam.setLocation(worldCamPos);
+            Vector3f worldCamPos = carModel.localToWorld(horizonOffset, null);
+            cam.setLocation(worldCamPos);
 
-        // Inclinazione leggera verso il basso (circa 8 gradi)
-        Quaternion pitch = new Quaternion().fromAngleAxis(
-            com.jme3.math.FastMath.DEG_TO_RAD * 18f, 
-            Vector3f.UNIT_X
-        );
-        
-        cam.setRotation(carModel.getWorldRotation().mult(pitch));
+            // Inclinazione leggera verso il basso (circa 8 gradi)
+            Quaternion pitch = new Quaternion().fromAngleAxis(
+                    com.jme3.math.FastMath.DEG_TO_RAD * 18f,
+                    Vector3f.UNIT_X);
+
+            cam.setRotation(carModel.getWorldRotation().mult(pitch));
+
+            float targetSteer = 0f;
+            if (left)
+                targetSteer += maxSteerAngle;
+            if (right)
+                targetSteer -= maxSteerAngle;
+
+            // 2. Transizione morbida verso il valore target
+            if (targetSteer != 0f) {
+                // Quando premi il tasto, sterza gradualmente verso targetSteer
+                currentSteer = FastMath.interpolateLinear(steerSpeed * tpf, currentSteer, targetSteer);
+            } else {
+                // Quando rilasci i tasti, fai riallineare gradualmente le ruote al centro (0f)
+                currentSteer = FastMath.interpolateLinear(returnSpeed * tpf, currentSteer, 0f);
+            }
+
+            // 3. Applica il valore interpolato al veicolo
+            vehicle.steer(currentSteer);
         }
     }
 
