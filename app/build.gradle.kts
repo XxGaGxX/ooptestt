@@ -3,16 +3,22 @@ plugins {
     application
 }
 
-repositories { mavenCentral() }
+val jme3Version = "3.8.0-stable"
 
-val jme = "3.8.0-stable"
+repositories {
+    mavenCentral()
+}
+
 dependencies {
-    implementation("org.jmonkeyengine:jme3-core:$jme")
-    implementation("org.jmonkeyengine:jme3-desktop:$jme")
-    implementation("org.jmonkeyengine:jme3-lwjgl3:$jme")
-    implementation("org.jmonkeyengine:jme3-plugins:$jme") // GltfLoader (.glb)
+    // Core di jMonkeyEngine
+    implementation("org.jmonkeyengine:jme3-core:$jme3Version")
+    implementation("org.jmonkeyengine:jme3-desktop:$jme3Version")
+    implementation("org.jmonkeyengine:jme3-lwjgl3:$jme3Version")
+    implementation("org.jmonkeyengine:jme3-testdata:$jme3Version")
+    // Fisica Bullet (sostituisce jme3-bullet e jme3-bullet-native)
+    implementation("com.github.stephengold:Minie:7.7.0")
 
-    testImplementation("junit:junit:4.13.2")
+    implementation("org.jmonkeyengine:jme3-plugins:$jme3Version")
 }
 
 java { toolchain { languageVersion.set(JavaLanguageVersion.of(25)) } }

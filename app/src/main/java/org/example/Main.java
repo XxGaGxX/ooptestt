@@ -1,142 +1,150 @@
 package org.example;
 
 import com.jme3.app.SimpleApplication;
-import com.jme3.app.SimpleApplication;
-import com.jme3.input.FlyByCamera;
-import com.jme3.input.KeyInput;
-import com.jme3.input.controls.ActionListener;
-import com.jme3.input.controls.KeyTrigger;
+import com.jme3.bounding.BoundingBox;
+import com.jme3.bullet.*;
+import com.jme3.bullet.collision.shapes.BoxCollisionShape;
+import com.jme3.bullet.collision.shapes.CompoundCollisionShape;
+import com.jme3.bullet.control.RigidBodyControl;
+import com.jme3.bullet.control.VehicleControl;
+import com.jme3.math.Vector3f;
+import com.jme3.scene.Geometry;
+import com.jme3.scene.Node;
+import com.jme3.scene.Spatial;
+import com.jme3.scene.shape.Box;
 import com.jme3.light.AmbientLight;
 import com.jme3.light.DirectionalLight;
-import com.jme3.material.MatParam;
+import com.jme3.light.LightProbe;
 import com.jme3.material.Material;
 import com.jme3.math.ColorRGBA;
 import com.jme3.math.FastMath;
-import com.jme3.math.Vector3f;
-import com.jme3.scene.Geometry;
-import com.jme3.scene.Spatial;
-import com.jme3.texture.Texture;
-import com.jme3.renderer.Camera;
-import com.jme3.scene.CameraNode;
-import com.jme3.scene.control.CameraControl.ControlDirection;
-import com.jme3.scene.shape.Quad;
-import com.jme3.math.Quaternion;
-import com.jme3.scene.Node;
-
-import java.util.HashMap;
-import java.util.Map;
 
 public class Main extends SimpleApplication {
-
-    private final Map<Geometry, Material> original = new HashMap<>();
-    private final Map<Geometry, Material> unshaded = new HashMap<>();
-    private boolean showUnshaded = true;
-
-    Node spinFL;
-    Node spinRL;
-    Node spinRR;
-    Node spinFR;
-    Spatial model;
-
-    private float steerAngle = 0f; // In radianti
-    private float wheelRadius = 0.35f; // Raggio della ruota in metri
+    private BulletAppState bulletAppState;
+    private VehicleControl vehicle;
 
     public static void main(String[] args) {
-
         new Main().start();
     }
 
-    private Node findNode(Spatial root, String name) {
-        Spatial[] out = new Spatial[1];
-        root.depthFirstTraversal(s -> {
-            if (name.equals(s.getName()))
-                out[0] = s;
-        });
-        return (Node) out[0];
+    private Node findNode(Spatial parent, String name) {
+        if (parent.getName() != null && parent.getName().equals(name) && parent instanceof Node) {
+            return (Node) parent;
+        }
+        if (parent instanceof Node) {
+            for (Spatial child : ((Node) parent).getChildren()) {
+                Node result = findNode(child, name);
+                if (result != null)
+                    return result;
+            }
+        }
+        return null;
     }
 
     @Override
     public void simpleInitApp() {
+        // 1. Inizializzazione fisica Bullet
+        bulletAppState = new BulletAppState();
+        bulletAppState.setDebugEnabled(true);
+        stateManager.attach(bulletAppState);
 
-        settings.setWidth(1600); // Larghezza in pixel
-        settings.setHeight(900); // Altezza in pixel
-        settings.setResizable(true); // Permette di ridimensionarla trascinando i bordi
-        restart(); // Applica le modifiche alla finestra
+        // 2. Caricamento modello auto
+        Spatial carModel = assetManager.loadModel("Models/porsche_rework.glb");
+        rootNode.attachChild(carModel);
 
-        model = assetManager.loadModel("Models/porsche_rework.glb");
-        Node car = new Node("car");
-        car.attachChild(model);
-        rootNode.attachChild(car);
+        // 3. Ricerca nodi ruote nel modello GLTF
+        Node wheelFR = findNode(carModel, "wheel_FR_spin");
+        Node wheelFL = findNode(carModel, "wheel_FL_spin");
+        Node wheelRR = findNode(carModel, "wheel_RR_spin");
+        Node wheelRL = findNode(carModel, "wheel_RL_spin");
 
-        spinFL = findNode(model, "wheel_FL_spin");
-        spinFR = findNode(car, "wheel_FR_spin");
-        spinRR = findNode(car, "wheel_RR_spin");
-        spinRL = findNode(car, "wheel_RL_spin");
+        // FONDAMENTALE: Forza l'aggiornamento delle trasformazioni e delle BoundingBox
+        // prima di leggere pos e bounds
+        carModel.updateGeometricState();
 
-        rootNode.addLight(new DirectionalLight(new Vector3f(-1, -1, -1).normalizeLocal()));
+        // 4. Creazione forma fisica telaio e VehicleControl
+
+        // 1. Calcola il box di ingombro (BoundingBox) del modello 3D
+        BoundingBox bounds = (BoundingBox) carModel.getWorldBound();
+
+        // 2. Calcola la mezza dimensione (extent) per la box fisica
+        // Riduciamo leggermente le dimensioni (es. * 0.85f) per evitare che il bordo
+        // inferiore tocchi terra
+        Vector3f extents = bounds.getExtent(null).multLocal(0.85f, 0.5f, 0.85f);
+        BoxCollisionShape boxShape = new BoxCollisionShape(extents);
+
+        // 3. Calcola l'offset dinamico: sposta il centro della hitbox verso l'alto
+        // basandosi sull'altezza totale del modello (bounds.getYExtent())
+        float offsetY = bounds.getYExtent() * 0.5f;
+
+        CompoundCollisionShape carShape = new CompoundCollisionShape();
+        carShape.addChildShape(boxShape, new Vector3f(0f, offsetY, 0f));
+
+        // 4. Assegna il control
+        vehicle = new VehicleControl(carShape, 1265f);
+        carModel.addControl(vehicle);
+        bulletAppState.getPhysicsSpace().add(vehicle);
+
+        // setup delle sospensioni
+
+        float stiffness = 150.0f;// 200=f1 car
+        float compValue = .3f; // (should be lower than damp)
+        float dampValue = .4f;
+        vehicle.setSuspensionCompression(compValue * 2.0f * FastMath.sqrt(stiffness));
+        vehicle.setSuspensionDamping(dampValue * 2.0f * FastMath.sqrt(stiffness));
+        vehicle.setSuspensionStiffness(stiffness);
+        vehicle.setMaxSuspensionForce(10000.0f);
+
+        Vector3f wheelDirection = new Vector3f(0, -1, 0); // was 0, -1, 0
+        Vector3f wheelAxle = new Vector3f(-1, 0, 0); // was -1, 0, 0
+        float radius = 0.5f;
+        float restLength = 0.08f;
+
+        Vector3f connectionFR = wheelFR.getLocalTranslation().add(0, restLength, 0);
+        Vector3f connectionFL = wheelFL.getLocalTranslation().add(0, restLength, 0);
+        Vector3f connectionRR = wheelRR.getLocalTranslation().add(0, restLength, 0);
+        Vector3f connectionRL = wheelRL.getLocalTranslation().add(0, restLength, 0);
+
+        // Ruote Anteriori (Front Left / Front Right)
+        vehicle.addWheel(wheelFL, connectionFL,
+                wheelDirection, wheelAxle, restLength, radius, true);
+
+        vehicle.addWheel(wheelFR, connectionFR,
+                wheelDirection, wheelAxle, restLength, radius, true);
+
+        // Ruote Posteriori (Rear Left / Rear Right)
+        vehicle.addWheel(wheelRL, connectionRL,
+                wheelDirection, wheelAxle, restLength, radius, false);
+
+        vehicle.addWheel(wheelRR, connectionRR,
+                wheelDirection, wheelAxle, restLength, radius, false);
+
+        // 6. Pavimento fisico per sostenere la vettura
+        Geometry floorGeo = new Geometry("Floor", new Box(50f, 0.1f, 50f));
+        Material floorMat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
+        floorMat.setColor("Color", ColorRGBA.Gray);
+        floorGeo.setMaterial(floorMat);
+        floorGeo.setLocalTranslation(0, -1.5f, 0); // Un po' sotto l'origine
+        rootNode.attachChild(floorGeo);
+
+        RigidBodyControl floorPhysics = new RigidBodyControl(0.0f);
+        floorGeo.addControl(floorPhysics);
+        bulletAppState.getPhysicsSpace().add(floorPhysics);
+
+        // 7. Sfondo e Illuminazione
+        viewPort.setBackgroundColor(ColorRGBA.Cyan);
+
+        DirectionalLight sun = new DirectionalLight();
+        sun.setDirection(new Vector3f(-0.5f, -1.0f, -0.3f).normalizeLocal());
+        sun.setColor(ColorRGBA.White.mult(1.2f));
+        rootNode.addLight(sun);
+
         rootNode.addLight(new AmbientLight(ColorRGBA.White.mult(0.4f)));
 
-        // Cielo
-        viewPort.setBackgroundColor(new ColorRGBA(0.5f, 0.7f, 0.95f, 1f));
-
-        // Terreno: la base delle gomme sta a Y ≈ -0.15
-        Geometry ground = new Geometry("ground", new Quad(500, 500));
-        Material gm = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
-        gm.setColor("Color", ColorRGBA.DarkGray);
-        ground.setMaterial(gm);
-        ground.rotate(-FastMath.HALF_PI, 0, 0); // da verticale a orizzontale
-        ground.setLocalTranslation(-250, -0.15f, 250); // centrato sull'origine
-        rootNode.attachChild(ground);
-
-        // CameraNode hoodCam = new CameraNode("hoodCam", cam);
-        // hoodCam.setControlDir(ControlDirection.SpatialToCamera);
-        // car.attachChild(hoodCam);
-        // hoodCam.setLocalTranslation(0f, 0.95f, 1.25f);
-        // hoodCam.setLocalRotation(new Quaternion().lookAt(Vector3f.UNIT_Z,
-        // Vector3f.UNIT_Y));
-
-        cam.setFrustumPerspective(60f, (float) cam.getWidth() / cam.getHeight(), 0.1f, 1000f);
-        cam.setLocation(new Vector3f(6, 2, 8));
-        cam.lookAt(Vector3f.ZERO, Vector3f.UNIT_Y);
-
+        // 8. Posizionamento Camera
         flyCam.setEnabled(true);
-        flyCam.setMoveSpeed(10f); // m/s: alza per muoverti più veloce
-        flyCam.setRotationSpeed(1.5f); // sensibilità del mouse
+        flyCam.setMoveSpeed(25f);
+        cam.setLocation(new Vector3f(0, 4, -12));
+        cam.lookAt(Vector3f.ZERO, Vector3f.UNIT_Y);
     }
-
-    // Dichiara solo questa fuori dal metodo
-    private float timer = 0f;
-    private float totalSpinAngle = 0f; // Mantiene l'accumulo della rotazione delle ruote
-
-    @Override
-    public void simpleUpdate(float tpf) {
-        timer += tpf;
-
-        // 1. Calcola l'angolo di sterzata sull'asse Z (da -30° a +30°)
-        float steerZ = FastMath.cos(timer * 2.0f) * (18f * FastMath.DEG_TO_RAD);
-
-        // 2. Accumula l'angolo di rotolamento delle ruote (avanti/indietro su X)
-        float v = 10f; // m/s
-        totalSpinAngle += -v * tpf / 0.35f;
-
-        // 3. Crea i quaternioni per le due rotazioni
-        Quaternion qSteer = new Quaternion().fromAngles(0, steerZ, 0); // Sterzo su Z
-        Quaternion qSpin = new Quaternion().fromAngles(totalSpinAngle, 0, 0); // Rotolamento su X
-
-        // 4. Combina le due rotazioni (Sterzo * Rotolamento)
-        Quaternion combinedFront = qSteer.mult(qSpin);
-
-        // 5. APPLICA ALLE RUOTE ANTERIORI (Sterzo + Spin sullo stesso nodo)
-        if (spinFL != null)
-            spinFL.setLocalRotation(combinedFront);
-        if (spinFR != null)
-            spinFR.setLocalRotation(combinedFront);
-
-        // 6. APPLICA ALLE RUOTE POSTERIORI (Solo Spin)
-        if (spinRL != null)
-            spinRL.setLocalRotation(qSpin);
-        if (spinRR != null)
-            spinRR.setLocalRotation(qSpin);
-    }
-
 }
