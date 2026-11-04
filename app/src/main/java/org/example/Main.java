@@ -16,6 +16,7 @@ import com.jme3.scene.Geometry;
 import com.jme3.scene.Node;
 import com.jme3.scene.Spatial;
 import com.jme3.scene.shape.Box;
+import com.jme3.system.AppSettings;
 import com.jme3.light.AmbientLight;
 import com.jme3.light.DirectionalLight;
 import com.jme3.light.LightProbe;
@@ -23,17 +24,23 @@ import com.jme3.material.Material;
 import com.jme3.math.ColorRGBA;
 import com.jme3.math.FastMath;
 import com.jme3.math.Matrix3f;
+import com.jme3.math.Quaternion;
 
 public class Main extends SimpleApplication implements ActionListener {
     private BulletAppState bulletAppState;
     private com.jme3.font.BitmapText debugText;
     private VehicleControl vehicle;
     private final float accelerationForce = 1000.0f;
-    private final float brakeForce = 4000.0f;
+    private final float brakeForce = 2500.0f;
     private float steeringValue = 0;
     private boolean left = false, right = false, up = false, down = false;
     private float accelerationValue = 0;
     private final float maxSteerAngle = 0.35f;
+    public Spatial carModel;
+    Vector3f horizonOffset = new Vector3f(0.0f, 2f, -4.8f);
+    Quaternion horizonPitch = new Quaternion().fromAngleAxis(
+            com.jme3.math.FastMath.DEG_TO_RAD * 12f,
+            Vector3f.UNIT_X);
 
     private void initKeys() {
         inputManager.addMapping("Lefts", new KeyTrigger(KeyInput.KEY_A));
@@ -45,7 +52,19 @@ public class Main extends SimpleApplication implements ActionListener {
     }
 
     public static void main(String[] args) {
-        new Main().start();
+        Main app = new Main();
+        app.showSettings = false;
+
+        AppSettings settings = new AppSettings(true);
+
+        settings.put("Width", 1280);
+        settings.put("Height", 720);
+
+        settings.put("Title", "My jME3 Game");
+        settings.setVSync(true);
+
+        app.setSettings(settings);
+        app.start();
     }
 
     private Node findNode(Spatial parent, String name) {
@@ -78,7 +97,7 @@ public class Main extends SimpleApplication implements ActionListener {
         stateManager.attach(bulletAppState);
 
         // 2. Caricamento modello auto
-        Spatial carModel = assetManager.loadModel("Models/porsche_rework.glb");
+        carModel = assetManager.loadModel("Models/porsche_rework.glb");
         rootNode.attachChild(carModel);
 
         // 3. Ricerca nodi ruote nel modello GLTF
@@ -170,22 +189,33 @@ public class Main extends SimpleApplication implements ActionListener {
 
         rootNode.addLight(new AmbientLight(ColorRGBA.White.mult(0.4f)));
 
-        // 8. Posizionamento Camera
-        flyCam.setEnabled(false);
+        // // 8. Posizionamento Camera
+        // flyCam.setEnabled(false);
 
-        // Inizializza la ChaseCamera collegata al modello dell'auto
-        ChaseCamera chaseCam = new ChaseCamera(cam, carModel, inputManager);
+        // // Inizializza la ChaseCamera collegata al modello dell'auto
+        // ChaseCamera chaseCam = new ChaseCamera(cam, carModel, inputManager);
 
-        // Configurazione distanze e angoli per una visuale GT3
-        chaseCam.setMinDistance(5.0f); // Distanza minima quando si fa zoom
-        chaseCam.setMaxDistance(12.0f); // Distanza massima
-        chaseCam.setDefaultDistance(8.0f); // Distanza di default dietro l'auto
-        chaseCam.setDefaultVerticalRotation(FastMath.PI / 6); // Angolo verticale di default (~30 gradi)
-        chaseCam.setMinVerticalRotation(0.0f);
+        // // Configurazione distanze e angoli per una visuale GT3
+        // chaseCam.setMinDistance(8.0f); // Distanza minima quando si fa zoom
+        // chaseCam.setMaxDistance(8.0f); // Distanza massima
+        // chaseCam.setDefaultDistance(8.0f); // Distanza di default dietro l'auto
+        // chaseCam.setDefaultVerticalRotation(FastMath.PI / 6); // Angolo verticale di
+        // default (~30 gradi)
+        // chaseCam.setMinVerticalRotation(0.0f);
 
-        // Smoothness / Fluidità dell'inseguimento
-        chaseCam.setSmoothMotion(true);
-        chaseCam.setChasingSensitivity(5.0f); // Reattività nell'inseguire la rotazione
+        // // Smoothness / Fluidità dell'inseguimento
+        // chaseCam.setSmoothMotion(true);
+        // chaseCam.setChasingSensitivity(0.0f); // Reattività nell'inseguire la
+        // rotazione
+
+        if (flyCam != null) {
+            flyCam.setEnabled(false);
+        }
+        // Abbassa il frustum near per evitare il clipping quando fai zoom ravvicinati
+        cam.setFrustumNear(0.05f);
+        float aspect = (float) cam.getWidth() / (float) cam.getHeight();
+        // 60 gradi di FOV verticale
+        cam.setFrustumPerspective(60f, aspect, 0.1f, 1000f);
 
     }
 
@@ -198,10 +228,20 @@ public class Main extends SimpleApplication implements ActionListener {
             debugText.setText(String.format(
                     "Velocita: %.1f km/h | Pos: X=%.2f Y=%.2f Z=%.2f | Sterzo: %.2f",
                     speedKmH, pos.x, pos.y, pos.z, steeringValue));
+
+            // Posiziona la cam dietro l'auto
+        Vector3f worldCamPos = carModel.localToWorld(horizonOffset, null);
+        cam.setLocation(worldCamPos);
+
+        // Inclinazione leggera verso il basso (circa 8 gradi)
+        Quaternion pitch = new Quaternion().fromAngleAxis(
+            com.jme3.math.FastMath.DEG_TO_RAD * 18f, 
+            Vector3f.UNIT_X
+        );
+        
+        cam.setRotation(carModel.getWorldRotation().mult(pitch));
         }
     }
-
-    //
 
     @Override
     public void onAction(String binding, boolean isPressed, float tpf) {
