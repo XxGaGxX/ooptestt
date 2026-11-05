@@ -31,7 +31,7 @@ public class Main extends SimpleApplication implements ActionListener {
     private com.jme3.font.BitmapText debugText;
     private VehicleControl vehicle;
     private final float accelerationForce = 1000.0f;
-    private final float brakeForce = 1500.0f;
+    private final float brakeForce = 70.0f;
     private float steeringValue = 0;
     private boolean left = false, right = false, up = false, down = false;
     private float accelerationValue = 0;
@@ -40,6 +40,7 @@ public class Main extends SimpleApplication implements ActionListener {
     private float currentSteer = 0f;
     private final float steerSpeed = 2.5f;
     private final float returnSpeed = 4.0f;
+    float dragCoeff = 0.5f * 1.2f * 0.3f * 2.0f;
 
     Vector3f horizonOffset = new Vector3f(0.0f, 2f, -4.8f);
     Quaternion horizonPitch = new Quaternion().fromAngleAxis(
@@ -47,10 +48,10 @@ public class Main extends SimpleApplication implements ActionListener {
             Vector3f.UNIT_X);
 
     private void initKeys() {
-        inputManager.addMapping("Lefts", new KeyTrigger(KeyInput.KEY_A));
-        inputManager.addMapping("Rights", new KeyTrigger(KeyInput.KEY_D));
-        inputManager.addMapping("Ups", new KeyTrigger(KeyInput.KEY_W));
-        inputManager.addMapping("Downs", new KeyTrigger(KeyInput.KEY_S));
+        inputManager.addMapping("Lefts", new KeyTrigger(KeyInput.KEY_LEFT));
+        inputManager.addMapping("Rights", new KeyTrigger(KeyInput.KEY_RIGHT));
+        inputManager.addMapping("Ups", new KeyTrigger(KeyInput.KEY_UP));
+        inputManager.addMapping("Downs", new KeyTrigger(KeyInput.KEY_DOWN));
         inputManager.addMapping("Reset", new KeyTrigger(KeyInput.KEY_RETURN));
         inputManager.addListener(this, "Lefts", "Rights", "Ups", "Downs", "Reset");
     }
@@ -259,6 +260,11 @@ public class Main extends SimpleApplication implements ActionListener {
                 currentSteer = FastMath.interpolateLinear(returnSpeed * tpf, currentSteer, 0f);
             }
 
+            if(!up && speedKmH > 0 && !down){
+                vehicle.brake(2f);
+            }
+
+            
             // 3. Applica il valore interpolato al veicolo
             vehicle.steer(currentSteer);
         }
