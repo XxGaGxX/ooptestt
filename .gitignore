@@ -6,3 +6,9 @@ build
 
 # Ignore Kotlin plugin data
 .kotlin
+
+# Ignore resources folders
+resources/
+
+# Ignore compiled output folders
+bin/

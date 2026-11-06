@@ -23,6 +23,8 @@ import com.jme3.light.LightProbe;
 import com.jme3.material.Material;
 import com.jme3.math.ColorRGBA;
 import com.jme3.math.FastMath;
+import com.jme3.bullet.util.CollisionShapeFactory;
+import com.jme3.bullet.collision.shapes.CollisionShape;
 import com.jme3.math.Matrix3f;
 import com.jme3.math.Quaternion;
 
@@ -31,10 +33,9 @@ public class Main extends SimpleApplication implements ActionListener {
     private com.jme3.font.BitmapText debugText;
     private VehicleControl vehicle;
     private final float accelerationForce = 1000.0f;
-    private final float brakeForce = 70.0f;
+    private final float brakeForce = 170.0f;
     private float steeringValue = 0;
     private boolean left = false, right = false, up = false, down = false;
-    private float accelerationValue = 0;
     private final float maxSteerAngle = 0.35f;
     public Spatial carModel;
     private float currentSteer = 0f;
@@ -98,7 +99,7 @@ public class Main extends SimpleApplication implements ActionListener {
 
         // 1. Inizializzazione fisica Bullet
         bulletAppState = new BulletAppState();
-        bulletAppState.setDebugEnabled(true);
+        //bulletAppState.setDebugEnabled(true);
         stateManager.attach(bulletAppState);
 
         // 2. Caricamento modello auto
@@ -173,16 +174,36 @@ public class Main extends SimpleApplication implements ActionListener {
                 wheelDirection, wheelAxle, restLength, radius, false);
 
         // 6. Pavimento fisico per sostenere la vettura
-        Geometry floorGeo = new Geometry("Floor", new Box(50f, 0.1f, 50f));
-        Material floorMat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
-        floorMat.setColor("Color", ColorRGBA.Gray);
-        floorGeo.setMaterial(floorMat);
-        floorGeo.setLocalTranslation(0, -1.5f, 0); // Un po' sotto l'origine
-        rootNode.attachChild(floorGeo);
+        // Geometry floorGeo = new Geometry("Floor", new Box(50f, 0.1f, 50f));
+        // Material floorMat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
+        // floorMat.setColor("Color", ColorRGBA.Gray);
+        // floorGeo.setMaterial(floorMat);
+        // floorGeo.setLocalTranslation(0, -1.5f, 0); // Un po' sotto l'origine
+        // rootNode.attachChild(floorGeo);
 
-        RigidBodyControl floorPhysics = new RigidBodyControl(0.0f);
-        floorGeo.addControl(floorPhysics);
-        bulletAppState.getPhysicsSpace().add(floorPhysics);
+        // S
+
+        // RigidBodyControl floorPhysics = new RigidBodyControl(0.0f);
+        // floorGeo.addControl(floorPhysics);
+        // bulletAppState.getPhysicsSpace().add(floorPhysics);
+
+
+        Spatial trackSpatial = assetManager.loadModel("Models/source/monza2020.glb");
+
+        // trackSpatial.setLocalScale(1.0f); 
+        //trackSpatial.setLocalTranslation(Vector3f.ZERO);
+        
+        CollisionShape trackPhysicsShape = CollisionShapeFactory.createMeshShape((com.jme3.scene.Node) trackSpatial);
+
+        RigidBodyControl trackPhysicsNode = new RigidBodyControl(trackPhysicsShape, 0.0f);
+        
+        // 5. Associa la fisica al modello visivo
+        trackSpatial.addControl(trackPhysicsNode);
+
+        // 6. Attacca il tracciato al mondo visivo (Scenegraph) e al mondo fisico
+        rootNode.attachChild(trackSpatial);
+        bulletAppState.getPhysicsSpace().add(trackPhysicsNode);
+
 
         // 7. Sfondo e Illuminazione
         viewPort.setBackgroundColor(ColorRGBA.Cyan);
@@ -193,25 +214,6 @@ public class Main extends SimpleApplication implements ActionListener {
         rootNode.addLight(sun);
 
         rootNode.addLight(new AmbientLight(ColorRGBA.White.mult(0.4f)));
-
-        // // 8. Posizionamento Camera
-        // flyCam.setEnabled(false);
-
-        // // Inizializza la ChaseCamera collegata al modello dell'auto
-        // ChaseCamera chaseCam = new ChaseCamera(cam, carModel, inputManager);
-
-        // // Configurazione distanze e angoli per una visuale GT3
-        // chaseCam.setMinDistance(8.0f); // Distanza minima quando si fa zoom
-        // chaseCam.setMaxDistance(8.0f); // Distanza massima
-        // chaseCam.setDefaultDistance(8.0f); // Distanza di default dietro l'auto
-        // chaseCam.setDefaultVerticalRotation(FastMath.PI / 6); // Angolo verticale di
-        // default (~30 gradi)
-        // chaseCam.setMinVerticalRotation(0.0f);
-
-        // // Smoothness / Fluidità dell'inseguimento
-        // chaseCam.setSmoothMotion(true);
-        // chaseCam.setChasingSensitivity(0.0f); // Reattività nell'inseguire la
-        // rotazione
 
         if (flyCam != null) {
             flyCam.setEnabled(false);
@@ -254,7 +256,7 @@ public class Main extends SimpleApplication implements ActionListener {
             // 2. Transizione morbida verso il valore target
             if (targetSteer != 0f) {
                 // Quando premi il tasto, sterza gradualmente verso targetSteer
-                currentSteer = FastMath.interpolateLinear(steerSpeed * tpf, currentSteer, targetSteer);
+                currentSteer = FastMath.interpolateLinear((steerSpeed*20f)/speedKmH * tpf, currentSteer, targetSteer);
             } else {
                 // Quando rilasci i tasti, fai riallineare gradualmente le ruote al centro (0f)
                 currentSteer = FastMath.interpolateLinear(returnSpeed * tpf, currentSteer, 0f);
@@ -272,6 +274,8 @@ public class Main extends SimpleApplication implements ActionListener {
 
     @Override
     public void onAction(String binding, boolean isPressed, float tpf) {
+
+        float speedKmH = vehicle.getCurrentVehicleSpeedKmHour();
         switch (binding) {
             case "Lefts":
                 left = isPressed;
@@ -287,7 +291,7 @@ public class Main extends SimpleApplication implements ActionListener {
                 break;
             case "Reset":
                 if (isPressed) {
-                    vehicle.setPhysicsLocation(new Vector3f(0, 1f, 0));
+                    vehicle.setPhysicsLocation(new Vector3f(-267, 10f, 0));
                     vehicle.setPhysicsRotation(new Matrix3f());
                     vehicle.setLinearVelocity(Vector3f.ZERO);
                     vehicle.setAngularVelocity(Vector3f.ZERO);
@@ -308,6 +312,12 @@ public class Main extends SimpleApplication implements ActionListener {
         if (up) {
             vehicle.accelerate(accelerationForce);
             vehicle.brake(0f);
+
+            if(speedKmH >= 270){
+                vehicle.accelerate(0f);
+            }else{
+                vehicle.accelerate(accelerationForce);
+            }
         } else {
             vehicle.accelerate(0f);
         }
